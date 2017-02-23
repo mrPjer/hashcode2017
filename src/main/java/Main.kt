@@ -56,7 +56,7 @@ fun main(args: Array<String>) {
 
             CacheProposition(cacheId, it.videoId, savings, it.endpointId)
         }
-    }.sortedByDescending { it.savings }.toMutableList()
+    }.sortedByDescending { it.savings }.toTypedArray()
 
 
     var position = 0
@@ -136,7 +136,7 @@ fun main(args: Array<String>) {
     }.forEach(::println)
 }
 
-private fun <T> List<T>.findAll(startIndex: Int, predicate: (T) -> Boolean): List<Int> {
+private fun <T> Array<T>.findAll(startIndex: Int, predicate: (T) -> Boolean): List<Int> {
     return (startIndex..size - 1).filter { predicate(this[it]) }
 }
 
