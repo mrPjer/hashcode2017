@@ -60,10 +60,10 @@ fun main(args: Array<String>) {
 
 
     var position = 0
-    val uselessIndices = mutableSetOf<Int>()
+    val uselessIndices = (0..propositions.size - 1).map { false }.toBooleanArray()
 
     while (position < propositions.size) {
-        if (uselessIndices.contains(position)) {
+        if (uselessIndices[position]) {
             log("At useless position $position")
             ++position
             continue
@@ -94,7 +94,7 @@ fun main(args: Array<String>) {
             proposition.originalEndpoint == it.originalEndpoint && it.videoId == proposition.videoId
         }
 
-        uselessIndices.addAll(lessOptimal)
+        lessOptimal.forEach { uselessIndices[it] = true }
 
         if (LOG) {
             log("Removing less optimal solutions")
@@ -112,7 +112,7 @@ fun main(args: Array<String>) {
             outOfCacheIndices.map { propositions[it] }.forEach { println("\t$it") }
         }
 
-        uselessIndices.addAll(outOfCacheIndices)
+        outOfCacheIndices.forEach { uselessIndices[it] = true }
 
         ++position
     }
