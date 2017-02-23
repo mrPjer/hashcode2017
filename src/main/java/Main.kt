@@ -1,7 +1,8 @@
 data class Endpoint(
         val dataCenterLatency: Int,
         val cacheLatencies: Map<Int, Int>,
-        val expectedVideoRequests: MutableMap<Int, Int>
+        val expectedVideoRequests: MutableMap<Int, Int>,
+        val cacheIds: IntArray
 )
 
 data class ExpectedRequest(
@@ -20,19 +21,21 @@ data class CacheProposition(
 fun main(args: Array<String>) {
     val (videoCount, endpointCount, requestDescriptionCount, cacheCount, cacheSize) = readInts()
 
-    val videoSizes = readInts()
+    val videoSizes = readInts().toTypedArray()
 
     val expectedRequests = mutableListOf<ExpectedRequest>()
 
-    val cacheSizes = (0..cacheSize - 1).map { cacheSize }.toMutableList()
+    val cacheSizes = (0..cacheSize - 1).map { cacheSize }.toTypedArray()
 
     val endpoints = (0..endpointCount - 1).map {
         val (latency, cacheCount) = readInts()
+        val cacheIds = mutableListOf<Int>()
         val cacheLatencies = (0..cacheCount - 1).map {
             val (cacheId, latency) = readInts()
+            cacheIds.add(cacheId)
             Pair(cacheId, latency)
         }.toMap()
-        Endpoint(latency, cacheLatencies, mutableMapOf())
+        Endpoint(latency, cacheLatencies, mutableMapOf(), cacheIds.toIntArray())
     }
 
     (0..requestDescriptionCount - 1).forEach {
@@ -101,7 +104,7 @@ fun main(args: Array<String>) {
             lessOptimal.map { propositions[it] }.forEach { println("\t$it") }
         }
 
-        val endpointMaxCacheSize = endpoints.map { it.cacheLatencies.keys.map { cacheSizes[it] }.max() ?: 0 }
+        val endpointMaxCacheSize = endpoints.map { it.cacheIds.map { cacheSizes[it] }.max() ?: 0 }
 
         val outOfCacheIndices = propositions.findAll(position) {
             videoSizes[it.videoId] > endpointMaxCacheSize[it.originalEndpoint]
