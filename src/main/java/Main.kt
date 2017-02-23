@@ -59,7 +59,11 @@ fun main(args: Array<String>) {
 
             CacheProposition(cacheId, it.videoId, savings, it.endpointId)
         }
-    }.sortedByDescending { it.savings }.toTypedArray()
+    }
+            .filter { it.savings > 1000000 }
+            .sortedByDescending { it.savings }
+            .take(100000)
+            .toTypedArray()
 
 
     var position = 0
@@ -93,7 +97,7 @@ fun main(args: Array<String>) {
 
         log("Accepting $proposition")
 
-        val lessOptimal = propositions.findAll(position) {
+        val lessOptimal = propositions.findAll(uselessIndices, position) {
             proposition.originalEndpoint == it.originalEndpoint && it.videoId == proposition.videoId
         }
 
@@ -106,7 +110,7 @@ fun main(args: Array<String>) {
 
         val endpointMaxCacheSize = endpoints.map { it.cacheIds.map { cacheSizes[it] }.max() ?: 0 }
 
-        val outOfCacheIndices = propositions.findAll(position) {
+        val outOfCacheIndices = propositions.findAll(uselessIndices, position) {
             videoSizes[it.videoId] > endpointMaxCacheSize[it.originalEndpoint]
         }
 
@@ -139,8 +143,10 @@ fun main(args: Array<String>) {
     }.forEach(::println)
 }
 
-private fun <T> Array<T>.findAll(startIndex: Int, predicate: (T) -> Boolean): List<Int> {
-    return (startIndex..size - 1).filter { predicate(this[it]) }
+private fun <T> Array<T>.findAll(skipArray: BooleanArray, startIndex: Int, predicate: (T) -> Boolean): List<Int> {
+    return (startIndex..size - 1)
+            .filter { !skipArray[it] }
+            .filter { predicate(this[it]) }
 }
 
 private fun readInts() = readLine()!!.split(" ").map(Integer::parseInt)
