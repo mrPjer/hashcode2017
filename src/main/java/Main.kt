@@ -83,9 +83,11 @@ fun main(args: Array<String>) {
             proposition.originalEndpoint == it.originalEndpoint && it.videoId == proposition.videoId
         }
 
-        val minCacheSize = cacheSizes.min()!!
+        val endpointMaxCacheSize = endpoints.map { it.cacheLatencies.keys.map { cacheSizes[it] }.max() ?: 0 }
 
-        propositions.removeAll { videoSizes[it.videoId] > minCacheSize }
+        propositions.removeAll {
+            videoSizes[it.videoId] > endpointMaxCacheSize[it.originalEndpoint]
+        }
     }
 
 
