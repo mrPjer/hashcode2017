@@ -58,19 +58,30 @@ fun main(args: Array<String>) {
         }
     }.sortedByDescending { it.savings }.toMutableList()
 
-    while (!propositions.isEmpty()) {
+
+    var position = 0
+    val uselessIndices = mutableSetOf<Int>()
+
+    while (position < propositions.size) {
+        if (uselessIndices.contains(position)) {
+            log("At useless position $position")
+            ++position
+            continue
+        }
+
         if (LOG) {
-            log("Propositions is ${propositions.size}")
+            log("Propositions is ${propositions.size - position}")
             //propositions.forEach { log("\t$it") }
         }
-        val proposition = propositions.first()
-        propositions.remove(proposition)
+
+        val proposition = propositions[position]
 
         val remainingSpace = cacheSizes[proposition.cacheId]
         val size = videoSizes[proposition.videoId]
 
         if (remainingSpace < size) {
             log("Rejecting for size: $proposition")
+            ++position
             continue
         }
 
@@ -79,15 +90,31 @@ fun main(args: Array<String>) {
 
         log("Accepting $proposition")
 
-        propositions.removeAll {
+        val lessOptimal = propositions.findAll(position) {
             proposition.originalEndpoint == it.originalEndpoint && it.videoId == proposition.videoId
+        }
+
+        uselessIndices.addAll(lessOptimal)
+
+        if (LOG) {
+            log("Removing less optimal solutions")
+            lessOptimal.map { propositions[it] }.forEach { println("\t$it") }
         }
 
         val endpointMaxCacheSize = endpoints.map { it.cacheLatencies.keys.map { cacheSizes[it] }.max() ?: 0 }
 
-        propositions.removeAll {
+        val outOfCacheIndices = propositions.findAll(position) {
             videoSizes[it.videoId] > endpointMaxCacheSize[it.originalEndpoint]
         }
+
+        if (LOG) {
+            log("Removing out of cache indices")
+            outOfCacheIndices.map { propositions[it] }.forEach { println("\t$it") }
+        }
+
+        uselessIndices.addAll(outOfCacheIndices)
+
+        ++position
     }
 
 
@@ -107,6 +134,10 @@ fun main(args: Array<String>) {
     cacheServers.keys.map { cacheId ->
         cacheServers[cacheId]!!.joinToString(separator = " ", prefix = "$cacheId ")
     }.forEach(::println)
+}
+
+private fun <T> List<T>.findAll(startIndex: Int, predicate: (T) -> Boolean): List<Int> {
+    return (startIndex..size - 1).filter { predicate(this[it]) }
 }
 
 private fun readInts() = readLine()!!.split(" ").map(Integer::parseInt)
