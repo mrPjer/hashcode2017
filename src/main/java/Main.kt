@@ -1,5 +1,3 @@
-import com.google.common.collect.HashMultimap
-
 data class Endpoint(
         val dataCenterLatency: Int,
         val cacheLatencies: Map<Int, Int>,
@@ -61,6 +59,8 @@ fun main(args: Array<String>) {
     }.sortedByDescending { it.savings }.toMutableList()
 
     while (!propositions.isEmpty()) {
+        log("Propositions is")
+        propositions.forEach { log("\t$it") }
         val proposition = propositions.first()
         propositions.remove(proposition)
 
@@ -68,30 +68,45 @@ fun main(args: Array<String>) {
         val size = videoSizes[proposition.videoId]
 
         if (remainingSpace < size) {
+            log("Rejecting for size: $proposition")
             continue
         }
 
         cacheSizes[proposition.cacheId] -= size
         cachePropositions.add(proposition)
 
-        /*
+        log("Accepting $proposition")
+
         propositions.removeAll {
             proposition.originalEndpoint == it.originalEndpoint && it.videoId == proposition.videoId
         }
-        */
     }
 
 
-    val cacheServers = HashMultimap.create<Int, Int>()
+    val cacheServers = mutableMapOf<Int, MutableList<Int>>()
 
     cachePropositions.forEach {
-        cacheServers.put(it.cacheId, it.videoId)
+        log("Collecting $it")
+        if (!cacheServers.containsKey(it.cacheId)) {
+            cacheServers.put(it.cacheId, mutableListOf())
+        }
+        cacheServers[it.cacheId]!!.add(it.videoId)
     }
 
-    println(cacheServers.keySet().size)
-    cacheServers.keySet().map { cacheId ->
-        cacheServers.get(cacheId).joinToString(separator = " ", prefix = "$cacheId ")
+    log(cacheServers.toString())
+
+    println(cacheServers.keys.size)
+    cacheServers.keys.map { cacheId ->
+        cacheServers[cacheId]!!.joinToString(separator = " ", prefix = "$cacheId ")
     }.forEach(::println)
 }
 
 private fun readInts() = readLine()!!.split(" ").map(Integer::parseInt)
+
+private val LOG = false
+
+private fun log(string: String) {
+    if (LOG) {
+        println(string)
+    }
+}
