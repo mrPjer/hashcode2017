@@ -83,12 +83,12 @@ fun main(args: Array<String>) {
     }
 
 
-    val cacheServers = mutableMapOf<Int, MutableList<Int>>()
+    val cacheServers = mutableMapOf<Int, MutableSet<Int>>()
 
     cachePropositions.forEach {
         log("Collecting $it")
         if (!cacheServers.containsKey(it.cacheId)) {
-            cacheServers.put(it.cacheId, mutableListOf())
+            cacheServers.put(it.cacheId, mutableSetOf())
         }
         cacheServers[it.cacheId]!!.add(it.videoId)
     }
