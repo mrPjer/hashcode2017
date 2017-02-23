@@ -15,7 +15,8 @@ data class ExpectedRequest(
 data class CacheProposition(
         val cacheId: Int,
         val videoId: Int,
-        val savings: Int
+        val savings: Int,
+        val originalEndpoint: Int
 )
 
 fun main(args: Array<String>) {
@@ -44,7 +45,7 @@ fun main(args: Array<String>) {
 
     val cachePropositions = mutableListOf<CacheProposition>()
 
-    expectedRequests.flatMap {
+    val propositions = expectedRequests.flatMap {
         val endpoint = endpoints[it.endpointId]
         val maxCost = it.requestCount * endpoint.dataCenterLatency
 
@@ -55,20 +56,31 @@ fun main(args: Array<String>) {
             val cost = it.requestCount * latency
             val savings = maxCost - cost
 
-            CacheProposition(cacheId, it.videoId, savings)
+            CacheProposition(cacheId, it.videoId, savings, it.endpointId)
         }
-    }.sortedByDescending { it.savings }
-            .forEach {
-                val remainingSpace = cacheSizes[it.cacheId]
-                val size = videoSizes[it.videoId]
+    }.sortedByDescending { it.savings }.toMutableList()
 
-                if (remainingSpace < size) {
-                    return@forEach
-                }
+    while (!propositions.isEmpty()) {
+        val proposition = propositions.first()
+        propositions.remove(proposition)
 
-                cacheSizes[it.cacheId] -= size
-                cachePropositions.add(it)
-            }
+        val remainingSpace = cacheSizes[proposition.cacheId]
+        val size = videoSizes[proposition.videoId]
+
+        if (remainingSpace < size) {
+            continue
+        }
+
+        cacheSizes[proposition.cacheId] -= size
+        cachePropositions.add(proposition)
+
+        /*
+        propositions.removeAll {
+            proposition.originalEndpoint == it.originalEndpoint && it.videoId == proposition.videoId
+        }
+        */
+    }
+
 
     val cacheServers = HashMultimap.create<Int, Int>()
 
