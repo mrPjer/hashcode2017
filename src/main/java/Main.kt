@@ -59,8 +59,10 @@ fun main(args: Array<String>) {
     }.sortedByDescending { it.savings }.toMutableList()
 
     while (!propositions.isEmpty()) {
-        log("Propositions is")
-        propositions.forEach { log("\t$it") }
+        if (LOG) {
+            log("Propositions is ${propositions.size}")
+            //propositions.forEach { log("\t$it") }
+        }
         val proposition = propositions.first()
         propositions.remove(proposition)
 
@@ -80,6 +82,10 @@ fun main(args: Array<String>) {
         propositions.removeAll {
             proposition.originalEndpoint == it.originalEndpoint && it.videoId == proposition.videoId
         }
+
+        val minCacheSize = cacheSizes.min()!!
+
+        propositions.removeAll { videoSizes[it.videoId] > minCacheSize }
     }
 
 
