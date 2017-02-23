@@ -1,3 +1,5 @@
+import com.google.common.collect.HashMultimap
+
 data class Endpoint(
         val dataCenterLatency: Int,
         val cacheLatencies: Map<Int, Int>,
@@ -42,7 +44,7 @@ fun main(args: Array<String>) {
 
     val cachePropositions = mutableListOf<CacheProposition>()
 
-    val savings = expectedRequests.flatMap {
+    expectedRequests.flatMap {
         val endpoint = endpoints[it.endpointId]
         val maxCost = it.requestCount * endpoint.dataCenterLatency
 
@@ -61,21 +63,23 @@ fun main(args: Array<String>) {
                 val size = videoSizes[it.videoId]
 
                 if (remainingSpace < size) {
-                    return
+                    return@forEach
                 }
 
                 cacheSizes[it.cacheId] -= size
                 cachePropositions.add(it)
             }
 
-    val cacheServers = cachePropositions.map {
-        Pair(it.cacheId, it.videoId)
-    }.toMap()
+    val cacheServers = HashMultimap.create<Int, Int>()
 
-    println(cacheServers.size)
-    cacheServers.forEach {
-        println()
+    cachePropositions.forEach {
+        cacheServers.put(it.cacheId, it.videoId)
     }
+
+    println(cacheServers.keySet().size)
+    cacheServers.keySet().map { cacheId ->
+        cacheServers.get(cacheId).joinToString(separator = " ", prefix = "$cacheId ")
+    }.forEach(::println)
 }
 
 private fun readInts() = readLine()!!.split(" ").map(Integer::parseInt)
