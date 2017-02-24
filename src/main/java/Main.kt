@@ -1,6 +1,6 @@
 data class Endpoint(
         val dataCenterLatency: Int,
-        val cacheLatencies: Map<Int, Int>,
+        val cacheLatencies: List<Pair<Int, Int>>,
         val expectedVideoRequests: MutableMap<Int, Int>,
         val cacheIds: IntArray
 )
@@ -18,6 +18,22 @@ data class CacheProposition(
         val originalEndpoint: Int
 )
 
+/** The minimal score a cache proposition needs to give to be considered */
+val MIN_PROPOSITION_SCORE = 20 * 1000
+/** The number of (top) propositions that will be considered */
+val PROPOSITIONS_TO_CONSIDER = 2000000
+
+/*
+ * |========================================================+===========================|
+ * | Problem                | MIN_PROPOSITION_SCORE | PROPOSITIONS_TO_CONSIDER | SCORE  |
+ * |------------------------------------------------------------------------------------|
+ * | Kittens                | 15000                 | 1000000                  | 516195 |
+ * | Trending today         | 20                    | 2000000                  | 352184 |
+ * | Me at the zoo          | 10                    | 20000                    | 493023 |
+ * | Videos worth spreading | 50                    | 2000000                  | 492769 |
+ * |====================================================================================|
+ */
+
 fun main(args: Array<String>) {
     val (videoCount, endpointCount, requestDescriptionCount, cacheCount, cacheSize) = readInts()
 
@@ -34,7 +50,7 @@ fun main(args: Array<String>) {
             val (cacheId, latency) = readInts()
             cacheIds.add(cacheId)
             Pair(cacheId, latency)
-        }.toMap()
+        }
         Endpoint(latency, cacheLatencies, mutableMapOf(), cacheIds.toIntArray())
     }
 
@@ -44,30 +60,40 @@ fun main(args: Array<String>) {
         expectedRequests.add(ExpectedRequest(videoId, endpointId, requestCount))
     }
 
-    val cachePropositions = mutableListOf<CacheProposition>()
+
+    var requestIndex = 0
 
     val propositions = expectedRequests.flatMap {
+        ++requestIndex
+
+        if (requestIndex % 1000 == 0) {
+            log("$requestIndex / ${expectedRequests.size}")
+        }
+
         val endpoint = endpoints[it.endpointId]
         val maxCost = it.requestCount * endpoint.dataCenterLatency
 
         endpoint.cacheLatencies.map { cache ->
-            val cacheId = cache.key
-            val latency = cache.value
+            val cacheId = cache.first
+            val latency = cache.second
 
             val cost = it.requestCount * latency
             val savings = maxCost - cost
 
             CacheProposition(cacheId, it.videoId, savings, it.endpointId)
-        }
+        }.filter { it.savings > MIN_PROPOSITION_SCORE }
     }
-            .filter { it.savings > 1000000 }
+            .apply { log("${this.size} propositions to consider") }
             .sortedByDescending { it.savings }
-            .take(100000)
+            .apply { log("Done sorting") }
+            .take(PROPOSITIONS_TO_CONSIDER)
+            .apply { log("Took top $PROPOSITIONS_TO_CONSIDER") }
             .toTypedArray()
 
 
     var position = 0
     val uselessIndices = (0..propositions.size - 1).map { false }.toBooleanArray()
+    val cachePropositions = mutableListOf<CacheProposition>()
 
     while (position < propositions.size) {
         if (uselessIndices[position]) {
