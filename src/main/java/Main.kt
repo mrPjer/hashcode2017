@@ -1,34 +1,35 @@
 data class Endpoint(
+        val id: Int,
         val dataCenterLatency: Int,
-        val cacheLatencies: List<Pair<Int, Int>>,
-        val expectedVideoRequests: MutableMap<Int, Int>,
-        val cacheIds: IntArray
+        val cacheLatencies: IntArray,
+        val connectedCaches: BooleanArray
 )
 
 data class ExpectedRequest(
         val videoId: Int,
-        val endpointId: Int,
+        val endpoint: Endpoint,
         val requestCount: Int
 )
 
-data class CacheProposition(
+data class Proposition(
         val cacheId: Int,
         val videoId: Int,
-        val savings: Int,
-        val originalEndpoint: Int
+        val videoSize: Int,
+        val totalSavings: Int,
+        val affectedEndpoints: BooleanArray
 )
 
 /** The minimal score a cache proposition needs to give to be considered */
-val MIN_PROPOSITION_SCORE = 20 * 1000
+val MIN_PROPOSITION_SCORE = 0 * 1000
 /** The number of (top) propositions that will be considered */
-val PROPOSITIONS_TO_CONSIDER = 2000000
+val PROPOSITIONS_TO_CONSIDER = Int.MAX_VALUE
 
 /*
  * |========================================================+===========================|
  * | Problem                | MIN_PROPOSITION_SCORE | PROPOSITIONS_TO_CONSIDER | SCORE  |
  * |------------------------------------------------------------------------------------|
  * | Kittens                | 15000                 | 1000000                  | 516195 |
- * | Trending today         | 20                    | 2000000                  | 352184 |
+ * | Trending today         | 20ni                     | 2000000                  | 352184 |
  * | Me at the zoo          | 10                    | 20000                    | 493023 |
  * | Videos worth spreading | 50                    | 2000000                  | 492769 |
  * |====================================================================================|
@@ -37,128 +38,141 @@ val PROPOSITIONS_TO_CONSIDER = 2000000
 fun main(args: Array<String>) {
     val (videoCount, endpointCount, requestDescriptionCount, cacheCount, cacheSize) = readInts()
 
+    log("$videoCount videos")
+    log("$endpointCount endpoints")
+    log("$cacheCount caches")
+    log("$cacheSize cache size")
+
     val videoSizes = readInts().toTypedArray()
+
+    log("Video sizes: ${videoSizes.joinToString(" ")}")
 
     val expectedRequests = mutableListOf<ExpectedRequest>()
 
     val cacheSizes = (0..cacheSize - 1).map { cacheSize }.toTypedArray()
 
     val endpoints = (0..endpointCount - 1).map {
-        val (latency, cacheCount) = readInts()
-        val cacheIds = mutableListOf<Int>()
-        val cacheLatencies = (0..cacheCount - 1).map {
+        log("Reading endpoint $it")
+        val (endpointLatency, endpointCacheCount) = readInts()
+        log("\tlatency = $endpointLatency, cacheCount = $cacheCount")
+        val connectedCaches = BooleanArray(cacheCount, init = { false })
+        val cacheLatencies = IntArray(cacheCount, init = { Int.MAX_VALUE })
+        (0..endpointCacheCount - 1).forEach {
             val (cacheId, latency) = readInts()
-            cacheIds.add(cacheId)
-            Pair(cacheId, latency)
+            cacheLatencies[cacheId] = latency
+            connectedCaches[cacheId] = true
         }
-        Endpoint(latency, cacheLatencies, mutableMapOf(), cacheIds.toIntArray())
+        Endpoint(it, endpointLatency, cacheLatencies, connectedCaches)
     }
 
     (0..requestDescriptionCount - 1).forEach {
         val (videoId, endpointId, requestCount) = readInts()
-        endpoints[endpointId].expectedVideoRequests.put(videoId, requestCount)
-        expectedRequests.add(ExpectedRequest(videoId, endpointId, requestCount))
+        val endpoint = endpoints[endpointId]
+
+        if (endpoint.connectedCaches.any()) {
+            expectedRequests.add(ExpectedRequest(videoId, endpoints[endpointId], requestCount))
+        }
     }
 
+    val propositionsToConsider = (0..cacheCount - 1).flatMap { cacheId ->
 
-    var requestIndex = 0
+        (0..videoCount - 1).map { videoId ->
 
-    val propositions = expectedRequests.flatMap {
-        ++requestIndex
+            val affectedEndpoints = BooleanArray(endpointCount)
 
-        if (requestIndex % 1000 == 0) {
-            log("$requestIndex / ${expectedRequests.size}")
+            val totalSaving = expectedRequests.filter {
+                it.endpoint.connectedCaches[cacheId] && it.videoId == videoId
+            }.map {
+                affectedEndpoints[it.endpoint.id] = true
+                it.requestCount * (it.endpoint.dataCenterLatency - it.endpoint.cacheLatencies[cacheId])
+            }.sum()
+
+            Proposition(cacheId, videoId, videoSizes[videoId], totalSaving, affectedEndpoints)
+        }.filter {
+            it.totalSavings >= MIN_PROPOSITION_SCORE
         }
 
-        val endpoint = endpoints[it.endpointId]
-        val maxCost = it.requestCount * endpoint.dataCenterLatency
-
-        endpoint.cacheLatencies.map { cache ->
-            val cacheId = cache.first
-            val latency = cache.second
-
-            val cost = it.requestCount * latency
-            val savings = maxCost - cost
-
-            CacheProposition(cacheId, it.videoId, savings, it.endpointId)
-        }.filter { it.savings > MIN_PROPOSITION_SCORE }
     }
-            .apply { log("${this.size} propositions to consider") }
-            .sortedByDescending { it.savings }
-            .apply { log("Done sorting") }
+            .sortedByDescending { it.totalSavings }
             .take(PROPOSITIONS_TO_CONSIDER)
-            .apply { log("Took top $PROPOSITIONS_TO_CONSIDER") }
             .toTypedArray()
 
+    if (LOG) {
+        log("Propositions to consider:")
+        propositionsToConsider.forEach {
+            log("\t${it.cacheId} <= ${it.videoId} = ${it.totalSavings}")
+        }
+    }
 
-    var position = 0
-    val uselessIndices = (0..propositions.size - 1).map { false }.toBooleanArray()
-    val cachePropositions = mutableListOf<CacheProposition>()
+    val propositionCount = propositionsToConsider.size
+    val shouldSkip = BooleanArray(propositionCount)
+    var index = 0
 
-    while (position < propositions.size) {
-        if (uselessIndices[position]) {
-            log("At useless position $position")
-            ++position
+    val acceptedPropositions = mutableSetOf<Proposition>()
+
+    while (index < propositionCount) {
+        log("Testing $index / $propositionCount")
+
+        if (shouldSkip[index]) {
+            log("\tSkipping")
+            ++index
             continue
         }
 
-        if (LOG) {
-            log("Propositions is ${propositions.size - position}")
-            //propositions.forEach { log("\t$it") }
-        }
+        val proposition = propositionsToConsider[index]
 
-        val proposition = propositions[position]
-
-        val remainingSpace = cacheSizes[proposition.cacheId]
-        val size = videoSizes[proposition.videoId]
-
-        if (remainingSpace < size) {
-            log("Rejecting for size: $proposition")
-            ++position
+        if (proposition.videoSize > cacheSizes[proposition.cacheId]) {
+            log("\tDropping for size: $proposition")
+            ++index
             continue
         }
 
-        cacheSizes[proposition.cacheId] -= size
-        cachePropositions.add(proposition)
+        log("\tAccepting")
 
-        log("Accepting $proposition")
+        cacheSizes[proposition.cacheId] -= proposition.videoSize
+        acceptedPropositions.add(proposition)
 
-        val lessOptimal = propositions.findAll(uselessIndices, position) {
-            proposition.originalEndpoint == it.originalEndpoint && it.videoId == proposition.videoId
-        }
+        /*
+         * Prune less optimal propositions
+         *
+         * Find all propositions where the cache and the video are the
+         * same and the connected endpoints are a subset of the current
+         * connected endpoint.
+         *
+         * ==> This will never happen
+         *
+         */
 
-        lessOptimal.forEach { uselessIndices[it] = true }
+        /*
+         * Find all propositions that have the same endpoint and video
+         * (but different cache) and subtract the points for that endpoint
+         * (but leave for the others)
+         */
 
-        if (LOG) {
-            log("Removing less optimal solutions")
-            lessOptimal.map { propositions[it] }.forEach { println("\t$it") }
-        }
+        /*
+         * Prune propositions that no longer fit
+         *
+         * Find all propositions that have the video size larger than the
+         * max available cache.
+         */
 
-        val endpointMaxCacheSize = endpoints.map { it.cacheIds.map { cacheSizes[it] }.max() ?: 0 }
+        (index + 1..propositionCount - 1)
+                .filter { !shouldSkip[it] }
+                .filter {
+                    val proposition = propositionsToConsider[it]
+                    proposition.videoSize > cacheSizes[proposition.cacheId]
+                }
+                .forEach { shouldSkip[it] = true }
 
-        val outOfCacheIndices = propositions.findAll(uselessIndices, position) {
-            videoSizes[it.videoId] > endpointMaxCacheSize[it.originalEndpoint]
-        }
-
-        if (LOG) {
-            log("Removing out of cache indices")
-            outOfCacheIndices.map { propositions[it] }.forEach { println("\t$it") }
-        }
-
-        outOfCacheIndices.forEach { uselessIndices[it] = true }
-
-        ++position
+        ++index
     }
 
 
     val cacheServers = mutableMapOf<Int, MutableSet<Int>>()
 
-    cachePropositions.forEach {
-        log("Collecting $it")
-        if (!cacheServers.containsKey(it.cacheId)) {
-            cacheServers.put(it.cacheId, mutableSetOf())
-        }
-        cacheServers[it.cacheId]!!.add(it.videoId)
+    acceptedPropositions.forEach {
+        val existing = cacheServers.getOrPut(it.cacheId, { mutableSetOf() })
+        existing.add(it.videoId)
     }
 
     log(cacheServers.toString())
@@ -169,15 +183,9 @@ fun main(args: Array<String>) {
     }.forEach(::println)
 }
 
-private fun <T> Array<T>.findAll(skipArray: BooleanArray, startIndex: Int, predicate: (T) -> Boolean): List<Int> {
-    return (startIndex..size - 1)
-            .filter { !skipArray[it] }
-            .filter { predicate(this[it]) }
-}
-
 private fun readInts() = readLine()!!.split(" ").map(Integer::parseInt)
 
-private val LOG = false
+private val LOG = true
 
 private fun log(string: String) {
     if (LOG) {
