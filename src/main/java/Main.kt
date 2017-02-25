@@ -20,9 +20,11 @@ data class Proposition(
 )
 
 /** The minimal score a cache proposition needs to give to be considered */
-val MIN_PROPOSITION_SCORE = 0 * 1000
+val MIN_PROPOSITION_SCORE = 2 * 1000
 /** The number of (top) propositions that will be considered */
-val PROPOSITIONS_TO_CONSIDER = Int.MAX_VALUE
+val PROPOSITIONS_TO_CONSIDER = 10000
+
+val PROPOSITION_SCORE_SIZE_ADJUSTER = 2.0
 
 /*
  * |========================================================+===========================|
@@ -51,6 +53,8 @@ fun main(args: Array<String>) {
 
     val cacheSizes = (0..cacheSize - 1).map { cacheSize }.toTypedArray()
 
+    val cacheVideoPairs: Array<BooleanArray> = Array(cacheCount, { BooleanArray(videoCount) })
+
     val endpoints = (0..endpointCount - 1).map {
         log("Reading endpoint $it")
         val (endpointLatency, endpointCacheCount) = readInts()
@@ -71,24 +75,50 @@ fun main(args: Array<String>) {
 
         if (endpoint.connectedCaches.any()) {
             expectedRequests.add(ExpectedRequest(videoId, endpoints[endpointId], requestCount))
+
+            (0..cacheCount - 1).filter {
+                endpoint.connectedCaches[it]
+            }.forEach { cacheId ->
+                cacheVideoPairs[cacheId][videoId] = true
+            }
+        }
+    }
+
+    if (LOG) {
+        log("Cache video matrix:")
+        cacheVideoPairs.forEachIndexed { i, booleans ->
+            log("\t$i\t${booleans.joinToString {
+                if (it) {
+                    "1"
+                } else {
+                    "0"
+                }
+            }}")
         }
     }
 
     val propositionsToConsider = (0..cacheCount - 1).flatMap { cacheId ->
 
-        (0..videoCount - 1).map { videoId ->
+        (0..videoCount - 1)
+                .filter { cacheVideoPairs[cacheId][it] }
+                .map { videoId ->
 
-            val affectedEndpoints = BooleanArray(endpointCount)
+                    log("Assembling $cacheId <= $videoId")
 
-            val totalSaving = expectedRequests.filter {
-                it.endpoint.connectedCaches[cacheId] && it.videoId == videoId
-            }.map {
-                affectedEndpoints[it.endpoint.id] = true
-                it.requestCount * (it.endpoint.dataCenterLatency - it.endpoint.cacheLatencies[cacheId])
-            }.sum()
+                    val affectedEndpoints = BooleanArray(endpointCount)
+                    val videoSize = videoSizes[videoId]
 
-            Proposition(cacheId, videoId, videoSizes[videoId], totalSaving, affectedEndpoints)
-        }.filter {
+                    val videoSizeScoreAdjuster = (1.0 - (videoSize / cacheSize.toDouble())) pow PROPOSITION_SCORE_SIZE_ADJUSTER
+
+                    val totalSaving = expectedRequests.filter {
+                        it.endpoint.connectedCaches[cacheId] && it.videoId == videoId
+                    }.map {
+                        affectedEndpoints[it.endpoint.id] = true
+                        ((it.requestCount * (it.endpoint.dataCenterLatency - it.endpoint.cacheLatencies[cacheId])) * videoSizeScoreAdjuster).toInt()
+                    }.sum()
+
+                    Proposition(cacheId, videoId, videoSizes[videoId], totalSaving, affectedEndpoints)
+                }.filter {
             it.totalSavings >= MIN_PROPOSITION_SCORE
         }
 
@@ -111,15 +141,16 @@ fun main(args: Array<String>) {
     val acceptedPropositions = mutableSetOf<Proposition>()
 
     while (index < propositionCount) {
-        log("Testing $index / $propositionCount")
 
         if (shouldSkip[index]) {
-            log("\tSkipping")
+            log("Skipping $index / $propositionCount")
             ++index
             continue
         }
 
         val proposition = propositionsToConsider[index]
+
+        log("Testing $index / $propositionCount - $proposition")
 
         if (proposition.videoSize > cacheSizes[proposition.cacheId]) {
             log("\tDropping for size: $proposition")
@@ -185,10 +216,12 @@ fun main(args: Array<String>) {
 
 private fun readInts() = readLine()!!.split(" ").map(Integer::parseInt)
 
+private infix fun Double.pow(power: Double) = Math.pow(this, power)
+
 private val LOG = true
 
 private fun log(string: String) {
     if (LOG) {
-        println(string)
+        System.err.println(string)
     }
 }
