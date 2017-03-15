@@ -12,10 +12,13 @@ data class ExpectedRequest(
 )
 
 data class Proposition(
+        val id: Int,
         val cacheId: Int,
         val videoId: Int,
         val videoSize: Int,
-        val totalSavings: Int,
+        var totalSavings: Int,
+        // (cacheId, videoId) => savings
+        val savings: Map<Pair<Int, Int>, Int>,
         val affectedEndpoints: BooleanArray
 )
 
@@ -97,6 +100,8 @@ fun main(args: Array<String>) {
         }
     }
 
+    var propositionId = 0
+
     val propositionsToConsider = (0..cacheCount - 1).flatMap { cacheId ->
 
         (0..videoCount - 1)
@@ -110,14 +115,17 @@ fun main(args: Array<String>) {
 
                     val videoSizeScoreAdjuster = (1.0 - (videoSize / cacheSize.toDouble())) pow PROPOSITION_SCORE_SIZE_ADJUSTER
 
+                    val savings = mutableMapOf<Pair<Int, Int>, Int>()
                     val totalSaving = expectedRequests.filter {
                         it.endpoint.connectedCaches[cacheId] && it.videoId == videoId
                     }.map {
                         affectedEndpoints[it.endpoint.id] = true
-                        ((it.requestCount * (it.endpoint.dataCenterLatency - it.endpoint.cacheLatencies[cacheId])) * videoSizeScoreAdjuster).toInt()
+                        val currentSavings = ((it.requestCount * (it.endpoint.dataCenterLatency - it.endpoint.cacheLatencies[cacheId])) * videoSizeScoreAdjuster).toInt()
+                        savings.put(Pair(cacheId, videoId), currentSavings)
+                        currentSavings
                     }.sum()
 
-                    Proposition(cacheId, videoId, videoSizes[videoId], totalSaving, affectedEndpoints)
+                    Proposition(propositionId++, cacheId, videoId, videoSizes[videoId], totalSaving, savings, affectedEndpoints)
                 }.filter {
             it.totalSavings >= MIN_PROPOSITION_SCORE
         }
@@ -175,12 +183,6 @@ fun main(args: Array<String>) {
          */
 
         /*
-         * Find all propositions that have the same endpoint and video
-         * (but different cache) and subtract the points for that endpoint
-         * (but leave for the others)
-         */
-
-        /*
          * Prune propositions that no longer fit
          *
          * Find all propositions that have the video size larger than the
@@ -196,6 +198,24 @@ fun main(args: Array<String>) {
                 .forEach { shouldSkip[it] = true }
 
         ++index
+
+        /*
+         * Find all propositions that have the same endpoint and video
+         * (but different cache) and subtract the points for that endpoint
+         * (but leave for the others)
+         */
+        (index + 1..propositionCount - 1)
+                .filter { !shouldSkip[it] }
+                .map { propositionsToConsider[it] }
+                .filter {
+                    it.videoId == proposition.videoId
+                            && it.affectedEndpoints[]
+                }
+                .forEach {
+                    val reduction = it.savings[Pair(proposition.cacheId, proposition.videoId)]!!
+                    log("\t${it.id} savings reduced from ${it.totalSavings} to ${it.totalSavings - reduction} ($reduction")
+                    it.totalSavings -= reduction
+                }
     }
 
 
